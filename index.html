@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SourceFix — Восстановление поврежденных файлов</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
+    <!-- Google AdSense SDK -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2144404555594841" crossorigin="anonymous"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg:           #060810;
+            --bg2:          #0c0f1c;
+            --surface:      rgba(12,15,28,.75);
+            --surface-b:    rgba(18,22,42,.92);
+            --text:         #c8d0e0;
+            --text-m:       #7b8db0;
+            --text-d:       #3a4260;
+            --border:       rgba(255,255,255,.08);
+            --border-b:     rgba(123,92,255,.25);
+            --grid:         rgba(123,92,255,.04);
+            --noise-op:     0.35;
+            --acid:         #00ffe0;
+            --neon:         #7b5cff;
+            --danger:       #ff3e6c;
+            --scan-op:      0.12;
+            --glow-neon:    0 0 40px -8px rgba(123,92,255,.35), 0 0 0 1px rgba(123,92,255,.15);
+            --glow-green:   0 0 40px -8px rgba(16,185,129,.40), 0 0 0 1px rgba(16,185,129,.18);
+            --glow-danger:  0 0 40px -8px rgba(255,62,108,.35), 0 0 0 1px rgba(255,62,108,.15);
+        }
+
+        @media (prefers-color-scheme: light) {
+            :root:not(.dark) {
+                --bg:           #f4f6fd;
+                --bg2:          #ebf0fc;
+                --surface:      rgba(255,255,255,.88);
+                --surface-b:    rgba(255,255,255,.98);
+                --text:         #0f172a;
+                --text-m:       #475569;
+                --text-d:       #94a3b8;
+                --border:       rgba(0,0,0,.09);
+                --border-b:     rgba(79,70,229,.24);
+                --grid:         rgba(79,70,229,.06);
+                --noise-op:     0.05;
+                --acid:         #0284c7;
+                --neon:         #4f46e5;
+                --danger:       #e11d48;
+                --scan-op:      0.04;
+                --glow-neon:    0 0 32px -6px rgba(79,70,229,.25), 0 0 0 1px rgba(79,70,229,.18);
+                --glow-green:   0 0 32px -6px rgba(16,185,129,.28), 0 0 0 1px rgba(16,185,129,.20);
+                --glow-danger:  0 0 32px -6px rgba(225,29,72,.22), 0 0 0 1px rgba(225,29,72,.18);
+            }
+        }
+
+        :root.light {
+            --bg:           #f4f6fd;
+            --bg2:          #ebf0fc;
+            --surface:      rgba(255,255,255,.88);
+            --surface-b:    rgba(255,255,255,.98);
+            --text:         #0f172a;
+            --text-m:       #475569;
+            --text-d:       #94a3b8;
+            --border:       rgba(0,0,0,.09);
+            --border-b:     rgba(79,70,229,.24);
+            --grid:         rgba(79,70,229,.06);
+            --noise-op:     0.05;
+            --acid:         #0284c7;
+            --neon:         #4f46e5;
+            --danger:       #e11d48;
+            --scan-op:      0.04;
+            --glow-neon:    0 0 32px -6px rgba(79,70,229,.25), 0 0 0 1px rgba(79,70,229,.18);
+            --glow-green:   0 0 32px -6px rgba(16,185,129,.28), 0 0 0 1px rgba(16,185,129,.20);
+            --glow-danger:  0 0 32px -6px rgba(225,29,72,.22), 0 0 0 1px rgba(225,29,72,.18);
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow-x: hidden;
+            transition: background .3s, color .3s;
+        }
+
+        body::before {
+            content:'';position:fixed;inset:0;
+            background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+            pointer-events:none;z-index:0;opacity:var(--noise-op);
+        }
+
+        .grid-bg {
+            background-image: linear-gradient(var(--grid) 1px,transparent 1px), linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+            background-size: 48px 48px;
+        }
+
+        @keyframes scan{0%{transform:translateY(-100%)}100%{transform:translateY(100vh)}}
+        .scanline{position:fixed;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--acid),transparent);opacity:var(--scan-op);animation:scan 4s linear infinite;pointer-events:none;z-index:1;}
+
+        .glass       { background:var(--surface);   backdrop-filter:blur(20px) saturate(1.3); border:1px solid var(--border); }
+        .glass-bright{ background:var(--surface-b); backdrop-filter:blur(32px); border:1px solid var(--border-b); }
+
+        .glow-neon   { box-shadow: var(--glow-neon); }
+        .glow-green  { box-shadow: var(--glow-green); }
+        .glow-danger { box-shadow: var(--glow-danger); }
+
+        .drop-active { border-color:var(--acid)!important; background:rgba(0,255,224,.06)!important; }
+
+        #canvas-container { width:260px; height:260px; margin:0 auto; position:relative; flex-shrink:0; }
+        #canvas-container canvas { border-radius:50%; }
+        @media(max-width:640px){ #canvas-container{ width:200px; height:200px; } }
+
+        #logo-canvas { width:36px; height:36px; border-radius:10px; display:block; }
+
+        @keyframes pulseRing{0%{transform:scale(.9);opacity:.7}70%{transform:scale(1.4);opacity:0}100%{transform:scale(.9);opacity:0}}
+        .pulse-ring { position:absolute; inset:-10px; border-radius:50%; border:1px solid var(--acid); opacity:0; }
+        .pulse-ring.active { animation:pulseRing 2.5s ease-out infinite; }
+
+        #progress-track { height:7px; background:rgba(128,128,128,.14); border-radius:99px; overflow:hidden; }
+        #progress-fill  { height:100%; width:0%; background:linear-gradient(90deg,var(--neon),var(--acid)); border-radius:99px; transition:width .2s ease-out; position:relative; }
+        #progress-fill::after { content:''; position:absolute; right:0;top:0;bottom:0; width:30px; background:linear-gradient(90deg,transparent,rgba(255,255,255,.5)); border-radius:99px; }
+
+        #glitch-terminal {
+            font-family:'JetBrains Mono',monospace; font-size:10.5px; line-height:1.6;
+            background: color-mix(in srgb, var(--bg) 92%, black 8%);
+            border:1px solid rgba(0,255,224,.15); border-radius:14px;
+            padding:14px; height:220px; overflow-y:auto; overflow-x:hidden;
+        }
+        #glitch-terminal::-webkit-scrollbar{ width:4px; }
+        #glitch-terminal::-webkit-scrollbar-thumb{ background:rgba(0,255,224,.25); border-radius:2px; }
+
+        .log-ts   { color: var(--text-d); user-select:none; }
+        .log-hex  { color:#00ffe0; }
+        .log-info { color:var(--text-m); }
+        .log-ok   { color:#10b981; }
+        .log-warn { color:#f59e0b; }
+        .log-err  { color:#ff3e6c; }
+        .log-frame{ color:#a78bfa; }
+        .log-byte { color:#38bdf8; }
+        .log-scan { color:#38bdf8; font-weight:700; }
+        .log-found{ color:#00ffe0; font-weight:700; }
+        .log-build{ color:#a78bfa; font-weight:700; }
+        .log-remux{ color:#10b981; font-weight:700; }
+
+        .stat-chip { display:flex; flex-direction:column; align-items:center; background:rgba(128,128,128,.06); border:1px solid rgba(128,128,128,.1); border-radius:12px; padding:10px 16px; gap:2px; }
+
+        .grad-acid { background:linear-gradient(135deg,var(--acid),#38bdf8); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+
+        .btn-primary  { background:linear-gradient(135deg,var(--neon),var(--acid)); color:#fff; font-weight:800; border-radius:14px; padding:14px 32px; display:inline-flex; align-items:center; gap:10px; transition:all .2s; box-shadow:0 4px 20px -4px rgba(79,70,229,.4); border:none; cursor:pointer; }
+        .btn-primary:hover  { transform:translateY(-2px); box-shadow:0 8px 28px -4px rgba(2,132,199,.5); }
+        .btn-ghost    { background:rgba(128,128,128,.08); color:var(--text); font-weight:600; border-radius:14px; padding:14px 24px; display:inline-flex; align-items:center; gap:8px; border:1px solid var(--border); cursor:pointer; transition:all .2s; }
+        .btn-ghost:hover    { background:rgba(128,128,128,.14); }
+        .btn-success  { background:linear-gradient(135deg,#059669,#10b981); color:#fff; font-weight:800; border-radius:14px; padding:14px 32px; display:inline-flex; align-items:center; gap:10px; box-shadow:0 4px 20px -4px rgba(16,185,129,.45); border:none; cursor:pointer; transition:all .2s; }
+        .btn-success:hover  { transform:translateY(-2px); }
+
+        .nav-pill  { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:500; background:rgba(128,128,128,.07); border:1px solid rgba(128,128,128,.12); border-radius:99px; padding:6px 14px; color:var(--text-m); text-decoration:none; transition:all .2s; cursor:pointer; }
+        .nav-pill:hover  { background:rgba(128,128,128,.14); color:var(--text); }
+
+        .fmt-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 6px 13px;
+            border-radius: 99px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text);
+            box-shadow: 0 2px 8px -2px rgba(0,0,0,.06);
+            transition: all .2s;
+        }
+        .fmt-pill:hover {
+            border-color: var(--border-b);
+            transform: translateY(-2px);
+        }
+
+        .feature-card { background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:24px; transition:border-color .25s, transform .25s; }
+        .feature-card:hover { border-color:var(--border-b); transform:translateY(-3px); }
+
+        .dz-corner-tl { position:absolute; top:0; left:0;  width:48px; height:48px; border-top:2px solid rgba(0,255,224,.35); border-left:2px solid rgba(0,255,224,.35); border-radius:24px 0 0 0; pointer-events:none; }
+        .dz-corner-tr { position:absolute; top:0; right:0; width:48px; height:48px; border-top:2px solid rgba(0,255,224,.35); border-right:2px solid rgba(0,255,224,.35); border-radius:0 24px 0 0; pointer-events:none; }
+        .dz-corner-bl { position:absolute; bottom:0; left:0;  width:48px; height:48px; border-bottom:2px solid rgba(0,255,224,.35); border-left:2px solid rgba(0,255,224,.35); border-radius:0 0 0 24px; pointer-events:none; }
+        .dz-corner-br { position:absolute; bottom:0; right:0; width:48px; height:48px; border-bottom:2px solid rgba(0,255,224,.35); border-right:2px solid rgba(0,255,224,.35); border-radius:0 0 24px 0; pointer-events:none; }
+
+        .err-card { background:rgba(255,62,108,.08); border:1px solid rgba(255,62,108,.25); border-radius:16px; padding:20px; }
+
+        @keyframes pulseOp{0%,100%{opacity:1}50%{opacity:.3}}
+        .status-dot { width:7px;height:7px;border-radius:50%;background:#10b981;animation:pulseOp 2s ease-in-out infinite; }
+
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+        .cur { animation:blink 1s step-end infinite; display:inline-block; }
+
+        ::-webkit-scrollbar { width:5px; }
+        ::-webkit-scrollbar-track { background:transparent; }
+        ::-webkit-scrollbar-thumb { background:rgba(128,128,128,.2); border-radius:3px; }
+
+        /* Side AdSense Skyscraper Banners */
+        .ad-banner-slot { width:160px; height:600px; transition: border-color .25s ease, box-shadow .25s ease; }
+        .ad-banner-slot:hover { border-color: rgba(123,92,255,.35); box-shadow: 0 0 25px -5px rgba(123,92,255,.15); }
+        :root.light .ad-banner-slot:hover { border-color: rgba(79,70,229,.35); box-shadow: 0 0 25px -5px rgba(79,70,229,.12); }
+        .ad-banner-slot ins.adsbygoogle[data-ad-status="filled"] ~ .ad-placeholder-content { display: none !important; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col relative grid-bg selection:bg-purple-600 selection:text-white">
+
+<div class="scanline"></div>
+
+<div class="fixed top-[-15%] left-[10%] w-[600px] h-[600px] rounded-full pointer-events-none" style="background:radial-gradient(circle,rgba(123,92,255,.10) 0%,transparent 70%)"></div>
+<div class="fixed bottom-[-10%] right-[5%] w-[500px] h-[500px] rounded-full pointer-events-none" style="background:radial-gradient(circle,rgba(0,255,224,.07) 0%,transparent 70%)"></div>
+
+<!-- HEADER -->
+<header class="relative z-10 w-full max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl overflow-hidden shrink-0 flex items-center justify-center border shadow-sm glass-bright" style="border-color:var(--border-b)">
+            <canvas id="logo-canvas"></canvas>
+        </div>
+        <div>
+            <span class="text-[17px] font-black tracking-tight" style="color:var(--text)">Source<span class="grad-acid">Fix</span></span>
+            <span class="ml-2 font-mono text-[10px] uppercase tracking-widest px-2 py-0.5 rounded" style="background:rgba(123,92,255,.12);color:var(--neon);border:1px solid rgba(123,92,255,.25)">Free &middot; Private</span>
+        </div>
+    </div>
+    <nav class="flex items-center gap-2.5">
+        <button id="themeToggleBtn" class="nav-pill" title="Сменить тему оформления">
+            <svg id="themeIconSun" class="hidden w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+            <svg id="themeIconMoon" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <span id="themeToggleText" class="text-[11px] font-mono">Тема</span>
+        </button>
+        <button id="tipBtnHeader" class="nav-pill border-amber-500/30 text-amber-400 hover:bg-amber-500/10 transition font-semibold" title="Поблагодарить автора чаевыми">
+            <span class="text-sm">☕</span>
+            <span class="hidden sm:inline font-bold">Чаевые автору</span>
+        </button>
+        <div class="flex items-center gap-2 nav-pill">
+            <div class="status-dot"></div>
+            <span class="hidden sm:inline">100% в вашем браузере &middot; Без отправки на сервер</span>
+        </div>
+        <a href="https://github.com" target="_blank" class="nav-pill">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+            <span class="hidden sm:inline">GitHub</span>
+        </a>
+    </nav>
+</header>
+
+<!-- CONTENT WRAPPER WITH SIDE AD BANNERS -->
+<div class="relative z-10 flex-1 w-full max-w-[1440px] mx-auto px-2 sm:px-4 flex justify-center items-start gap-3 xl:gap-5 2xl:gap-8">
+
+    <!-- LEFT SIDE AD BANNER (Google Ads 160x600 Skyscraper) -->
+    <aside class="hidden xl:flex flex-col items-center sticky top-20 shrink-0 w-[160px] z-20 pt-2" aria-label="Реклама слева">
+        <div class="w-full flex items-center justify-between text-[10px] font-mono tracking-wider px-1 mb-1.5" style="color:var(--text-d)">
+            <span class="uppercase font-semibold">Реклама</span>
+            <span class="text-[9px] opacity-75">Google Ads</span>
+        </div>
+        <div class="ad-banner-slot w-[160px] h-[600px] rounded-2xl glass border overflow-hidden flex flex-col items-center justify-between p-3.5 text-center relative shadow-lg"
+             style="border-color:var(--border)">
+            
+            <!-- Google AdSense Unit (Left) -->
+            <ins class="adsbygoogle"
+                 style="display:inline-block;width:160px;height:600px"
+                 data-ad-client="ca-pub-2144404555594841"
+                 data-ad-slot="3962211486"
+                 data-ad-format="vertical"
+                 data-full-width-responsive="false"></ins>
+            <script>
+                 (adsbygoogle = window.adsbygoogle || []).push({});
+            </script>
+
+            <!-- Ad Placeholder Content -->
+            <div class="ad-placeholder-content absolute inset-0 flex flex-col items-center justify-between p-4 pointer-events-none select-none bg-gradient-to-b from-transparent via-purple-500/[0.02] to-transparent">
+                <div class="flex flex-col items-center pt-3">
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-2 glass border border-purple-500/20 shadow-sm">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                        </svg>
+                    </div>
+                    <div class="text-[11px] font-black uppercase tracking-wider text-slate-300">Google Ads</div>
+                    <div class="text-[9px] font-mono mt-0.5" style="color:var(--text-d)">160 &times; 600</div>
+                </div>
+
+                <div class="my-auto text-center px-1">
+                    <div class="text-[11px] font-bold mb-1" style="color:var(--text)">Место для рекламы</div>
+                    <p class="text-[10px] leading-tight" style="color:var(--text-m)">Широкий небоскреб Google AdSense</p>
+                    <div class="mt-3 inline-block px-2.5 py-0.5 rounded text-[9px] font-mono glass border border-emerald-500/30 text-emerald-400 font-semibold">
+                        AdSense Ready
+                    </div>
+                </div>
+
+                <div class="pb-2 text-[9px] font-mono opacity-50" style="color:var(--text-d)">
+                    SourceFix Ads
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="flex-1 w-full max-w-5xl px-2 sm:px-4 py-6 flex flex-col items-center gap-10 min-w-0">
+
+    <!-- Hero -->
+    <div class="text-center max-w-2xl pt-4">
+        <div class="inline-flex items-center gap-2 mb-5 px-3.5 py-1.5 rounded-full text-[11px] font-mono font-semibold tracking-wider uppercase glass border border-purple-500/20" style="color:var(--neon)">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+            Реконструкция популярных форматов файлов
+        </div>
+        <h1 class="text-4xl sm:text-6xl font-black tracking-tight leading-none mb-4" style="color:var(--text)">
+            Ремонт поврежденных файлов<br><span class="grad-acid">быстро, надежно и бесплатно</span>
+        </h1>
+        <p class="text-sm sm:text-base leading-relaxed max-w-lg mx-auto" style="color:var(--text-m)">
+            <span class="font-bold" style="color:var(--text)">SourceFix</span> мгновенно восстанавливает поврежденные видео, фото, документы и архивы прямо в вашем браузере. Без очередей, ограничений по размеру и отправки данных на сервер — полностью конфиденциально и безопасно.
+        </p>
+
+        <!-- Все поддерживаемые форматы файлов -->
+        <div class="flex flex-wrap items-center justify-center gap-2 max-w-2xl mx-auto mt-6">
+            <span class="fmt-pill" title="Видеофайлы MP4 (H.264 / AAC)">
+                <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+                <span class="text-cyan-400 font-bold">MP4</span>
+            </span>
+            <span class="fmt-pill" title="Видеофайлы QuickTime MOV">
+                <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+                <span class="text-cyan-400 font-bold">MOV</span>
+            </span>
+            <span class="fmt-pill" title="Аудиопотоки MP3">
+                <span class="w-2 h-2 rounded-full bg-sky-400"></span>
+                <span class="text-sky-400 font-bold">MP3</span>
+            </span>
+            <span class="fmt-pill" title="Изображения JPEG / JPG">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span class="text-emerald-400 font-bold">JPEG</span>
+            </span>
+            <span class="fmt-pill" title="Изображения PNG">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span class="text-emerald-400 font-bold">PNG</span>
+            </span>
+            <span class="fmt-pill" title="Документы Microsoft Word">
+                <span class="w-2 h-2 rounded-full bg-blue-400"></span>
+                <span class="text-blue-400 font-bold">DOCX</span>
+            </span>
+            <span class="fmt-pill" title="Таблицы Microsoft Excel">
+                <span class="w-2 h-2 rounded-full bg-green-400"></span>
+                <span class="text-green-400 font-bold">XLSX</span>
+            </span>
+            <span class="fmt-pill" title="Презентации Microsoft PowerPoint">
+                <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+                <span class="text-amber-400 font-bold">PPTX</span>
+            </span>
+            <span class="fmt-pill" title="Архивы ZIP">
+                <span class="w-2 h-2 rounded-full bg-purple-400"></span>
+                <span class="text-purple-400 font-bold">ZIP</span>
+            </span>
+        </div>
+    </div>
+
+    <!-- DROP ZONE -->
+    <div id="dropzone"
+         class="w-full glass-bright glow-neon rounded-3xl p-8 sm:p-12 border-2 border-dashed transition-all duration-300 cursor-pointer relative overflow-hidden"
+         style="border-color:rgba(123,92,255,.3)">
+        <input type="file" id="fileInput" class="hidden">
+        <div class="dz-corner-tl"></div><div class="dz-corner-tr"></div>
+        <div class="dz-corner-bl"></div><div class="dz-corner-br"></div>
+
+        <div class="flex flex-col lg:flex-row items-center gap-10 lg:gap-14">
+
+            <!-- 3D Core with Universal Theme Rendering & Smooth Parallax -->
+            <div id="canvas-container" class="relative shrink-0">
+                <div id="pulse-ring-1" class="pulse-ring"></div>
+                <div id="pulse-ring-2" class="pulse-ring" style="animation-delay:1.25s"></div>
+            </div>
+
+            <!-- States -->
+            <div class="flex-1 w-full max-w-lg">
+
+                <!-- IDLE -->
+                <div id="state-idle" class="text-center lg:text-left space-y-6">
+                    <div>
+                        <h2 class="text-2xl sm:text-3xl font-black mb-2" style="color:var(--text)">Перетащите поврежденный файл</h2>
+                        <p class="text-sm" style="color:var(--text-m)">Поддерживаются файлы со стёртыми заголовками, прерванной загрузкой и битыми секторами.</p>
+                    </div>
+                    <button id="selectBtn" class="btn-primary">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        Выбрать файл на устройстве
+                    </button>
+                    <p class="text-[11px] font-mono" style="color:var(--text-d)">или просто перетащите файл в любое место карточки</p>
+                </div>
+
+                <!-- PROCESSING -->
+                <div id="state-processing" class="hidden space-y-5">
+                    <div class="flex items-center gap-3 glass rounded-2xl px-4 py-3">
+                        <div class="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style="background:rgba(123,92,255,.15)">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7b5cff" stroke-width="2.5" stroke-linecap="round" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div id="fileNameDisplay" class="text-sm font-semibold truncate" style="color:var(--text)"></div>
+                            <div id="fileSizeDisplay" class="text-xs font-mono" style="color:var(--text-m)"></div>
+                        </div>
+                        <span id="detectedBadge" class="text-[10px] font-mono font-bold px-2.5 py-1 rounded-lg shrink-0"
+                              style="background:rgba(123,92,255,.15);border:1px solid rgba(123,92,255,.3);color:#a78bfa">SCANNING</span>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2">
+                        <div class="stat-chip"><span id="cnt-bytes"  class="text-xs font-mono font-bold" style="color:var(--acid)">0 B</span><span class="text-[10px]" style="color:var(--text-d)">обработано</span></div>
+                        <div class="stat-chip"><span id="cnt-frames" class="text-xs font-mono font-bold" style="color:var(--neon)">0</span>  <span class="text-[10px]" style="color:var(--text-d)">найдено кадров</span></div>
+                        <div class="stat-chip"><span id="cnt-fixes"  class="text-xs font-mono font-bold" style="color:#f59e0b">0</span>  <span class="text-[10px]" style="color:var(--text-d)">исправлений</span></div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <div class="flex justify-between text-[11px] font-mono">
+                            <span id="statusText" style="color:var(--acid)">Инициализация…</span>
+                            <span id="percentText" style="color:var(--text)" class="font-bold">0%</span>
+                        </div>
+                        <div id="progress-track"><div id="progress-fill"></div></div>
+                        <div class="flex justify-between text-[10px] font-mono" style="color:var(--text-d)">
+                            <span id="substep-text">Чтение бинарных данных…</span>
+                            <span id="eta-text"></span>
+                        </div>
+                    </div>
+
+                    <div id="glitch-terminal">
+                        <div id="terminal-content"></div>
+                        <span style="color:var(--text-m)">&#9608;</span><span class="cur" style="color:var(--text-m)">_</span>
+                    </div>
+                </div>
+
+                <!-- SUCCESS -->
+                <div id="state-success" class="hidden space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-2xl flex items-center justify-center shrink-0"
+                             style="background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.3)">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"><path d="m9 12 2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+                        </div>
+                        <div>
+                            <div class="font-bold text-lg" style="color:var(--text)">Файл успешно восстановлен!</div>
+                            <div id="successSubtitle" class="text-xs font-mono" style="color:var(--text-m)">Файл проверен и реконструирован</div>
+                        </div>
+                    </div>
+
+                    <!-- Video Preview Player -->
+                    <div id="video-preview-wrapper" class="hidden w-full rounded-2xl overflow-hidden glass border border-slate-700/50 bg-black/50">
+                        <div class="px-4 py-2 border-b border-slate-800/80 flex items-center justify-between text-xs font-mono">
+                            <span class="text-emerald-400 flex items-center gap-1.5 font-bold">
+                                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                Плеер предпросмотра
+                            </span>
+                            <span id="video-preview-meta" class="text-slate-400 text-[11px]"></span>
+                        </div>
+                        <div class="p-2">
+                            <video id="repairedVideoPlayer" controls playsinline class="w-full rounded-xl max-h-64 bg-black object-contain"></video>
+                        </div>
+                    </div>
+
+                    <!-- Image Preview -->
+                    <div id="image-preview-wrapper" class="hidden w-full rounded-2xl overflow-hidden glass border border-slate-700/50 bg-black/50">
+                        <div class="px-4 py-2 border-b border-slate-800/80 flex items-center justify-between text-xs font-mono">
+                            <span class="text-emerald-400 flex items-center gap-1.5 font-bold">
+                                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                Предпросмотр изображения
+                            </span>
+                            <span id="image-preview-meta" class="text-slate-400 text-[11px]"></span>
+                        </div>
+                        <div class="p-4 flex items-center justify-center bg-black/40 min-h-[160px]">
+                            <img id="repairedImagePreview" class="max-h-72 max-w-full rounded-xl object-contain shadow-2xl border border-white/10" alt="Восстановленное изображение" />
+                        </div>
+                    </div>
+
+                    <!-- Archive Preview (ZIP, DOCX, XLSX) -->
+                    <div id="archive-preview-wrapper" class="hidden w-full rounded-2xl overflow-hidden glass border border-slate-700/50 bg-black/50">
+                        <div class="px-4 py-2 border-b border-slate-800/80 flex items-center justify-between text-xs font-mono">
+                            <span class="text-emerald-400 flex items-center gap-1.5 font-bold">
+                                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                Содержимое архива
+                            </span>
+                            <span id="archive-preview-meta" class="text-slate-400 text-[11px]"></span>
+                        </div>
+                        <div class="p-3 max-h-48 overflow-y-auto space-y-1 font-mono text-xs" id="archiveFileList">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-3 gap-2">
+                        <div class="stat-chip"><span id="sum-bytes"  class="text-xs font-mono font-bold" style="color:#10b981">—</span><span id="sum-bytes-lbl" class="text-[10px]" style="color:var(--text-d)">размер файла</span></div>
+                        <div class="stat-chip"><span id="sum-frames" class="text-xs font-mono font-bold" style="color:var(--neon)">—</span><span id="sum-frames-lbl" class="text-[10px]" style="color:var(--text-d)">кадров / файлов</span></div>
+                        <div class="stat-chip"><span id="sum-fixes"  class="text-xs font-mono font-bold" style="color:#f59e0b">—</span><span class="text-[10px]" style="color:var(--text-d)">исправлений</span></div>
+                    </div>
+
+                    <p id="repairSummary" class="text-xs glass rounded-xl px-4 py-3 leading-relaxed font-mono" style="color:var(--text)"></p>
+
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <button id="downloadBtn" class="btn-success flex-1 justify-center">
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            <span id="downloadBtnText">Скачать восстановленный файл</span>
+                        </button>
+                        <button id="resetBtn" class="btn-ghost">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.18"/></svg>
+                            Починить другой файл
+                        </button>
+                    </div>
+
+                    <!-- Tip Banner in Success State -->
+                    <div class="p-3.5 rounded-2xl glass border border-amber-500/25 bg-amber-500/5 flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <div class="flex items-center gap-3 text-left w-full sm:w-auto">
+                            <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-lg bg-amber-500/15 border border-amber-500/30 text-amber-400">
+                                ☕
+                            </div>
+                            <div>
+                                <div class="text-xs font-bold" style="color:var(--text)">Файл спасён? Поблагодарите автора</div>
+                                <div class="text-[11px]" style="color:var(--text-m)">Сервис бесплатен. Вы можете поддержать автора на Buy Me a Coffee или переводом на карту Monobank.</div>
+                            </div>
+                        </div>
+                        <button id="tipBtnSuccess" class="w-full sm:w-auto px-4 py-2 text-xs font-bold rounded-xl shrink-0 flex items-center justify-center gap-1.5 transition bg-gradient-to-r from-amber-500 to-amber-600 text-black shadow-lg shadow-amber-500/20 hover:scale-[1.02] cursor-pointer">
+                            <span>☕</span>
+                            <span>Оставить чаевые</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- ERROR -->
+                <div id="state-error" class="hidden space-y-4">
+                    <div class="err-card">
+                        <div class="flex items-center gap-2 mb-3">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ff3e6c" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            <span class="text-sm font-bold" style="color:#ff3e6c">Не удалось восстановить этот файл</span>
+                        </div>
+                        <p id="errorMsg" class="text-xs leading-relaxed font-mono" style="color:var(--text)"></p>
+                    </div>
+                    <button id="resetBtnErr" class="btn-ghost w-full justify-center">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.18"/></svg>
+                        Попробовать другой файл
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- FEATURE CARDS -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
+        <div class="feature-card">
+            <div class="w-9 h-9 rounded-xl mb-4 flex items-center justify-center" style="background:rgba(0,255,224,.1);border:1px solid rgba(0,255,224,.2)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--acid)" stroke-width="2.2" stroke-linecap="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div class="font-bold text-sm mb-1.5" style="color:var(--text)">100% Конфиденциально</div>
+            <p class="text-xs leading-relaxed" style="color:var(--text-m)">Файлы обрабатываются локально на вашем компьютере. Ваши данные никогда не покидают браузер и не передаются в сеть.</p>
+        </div>
+        <div class="feature-card">
+            <div class="w-9 h-9 rounded-xl mb-4 flex items-center justify-center" style="background:rgba(123,92,255,.1);border:1px solid rgba(123,92,255,.2)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--neon)" stroke-width="2.2" stroke-linecap="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+            </div>
+            <div class="font-bold text-sm mb-1.5" style="color:var(--text)">Умное восстановление</div>
+            <p class="text-xs leading-relaxed" style="color:var(--text-m)">Интеллектуальный анализ структуры возвращает к жизни видео, фото, документы и архивы даже при тяжелых повреждениях.</p>
+        </div>
+        <div class="feature-card">
+            <div class="w-9 h-9 rounded-xl mb-4 flex items-center justify-center" style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.2)">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </div>
+            <div class="font-bold text-sm mb-1.5" style="color:var(--text)">Бесплатно и без ограничений</div>
+            <p class="text-xs leading-relaxed" style="color:var(--text-m)">Без водяных знаков, регистрации и ограничений на объем. Скачивайте восстановленные файлы мгновенно.</p>
+        </div>
+    </div>
+</main>
+
+    <!-- RIGHT SIDE AD BANNER (Google Ads 160x600 Skyscraper) -->
+    <aside class="hidden xl:flex flex-col items-center sticky top-20 shrink-0 w-[160px] z-20 pt-2" aria-label="Реклама справа">
+        <div class="w-full flex items-center justify-between text-[10px] font-mono tracking-wider px-1 mb-1.5" style="color:var(--text-d)">
+            <span class="uppercase font-semibold">Реклама</span>
+            <span class="text-[9px] opacity-75">Google Ads</span>
+        </div>
+        <div class="ad-banner-slot w-[160px] h-[600px] rounded-2xl glass border overflow-hidden flex flex-col items-center justify-between p-3.5 text-center relative shadow-lg"
+             style="border-color:var(--border)">
+            
+            <!-- Google AdSense Unit (Right) -->
+            <ins class="adsbygoogle"
+                 style="display:inline-block;width:160px;height:600px"
+                 data-ad-client="ca-pub-2144404555594841"
+                 data-ad-slot="9022966479"
+                 data-ad-format="vertical"
+                 data-full-width-responsive="false"></ins>
+            <script>
+                 (adsbygoogle = window.adsbygoogle || []).push({});
+            </script>
+
+            <!-- Ad Placeholder Content -->
+            <div class="ad-placeholder-content absolute inset-0 flex flex-col items-center justify-between p-4 pointer-events-none select-none bg-gradient-to-b from-transparent via-purple-500/[0.02] to-transparent">
+                <div class="flex flex-col items-center pt-3">
+                    <div class="w-10 h-10 rounded-xl flex items-center justify-center mb-2 glass border border-purple-500/20 shadow-sm">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05"/>
+                            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335"/>
+                        </svg>
+                    </div>
+                    <div class="text-[11px] font-black uppercase tracking-wider text-slate-300">Google Ads</div>
+                    <div class="text-[9px] font-mono mt-0.5" style="color:var(--text-d)">160 &times; 600</div>
+                </div>
+
+                <div class="my-auto text-center px-1">
+                    <div class="text-[11px] font-bold mb-1" style="color:var(--text)">Место для рекламы</div>
+                    <p class="text-[10px] leading-tight" style="color:var(--text-m)">Широкий небоскреб Google AdSense</p>
+                    <div class="mt-3 inline-block px-2.5 py-0.5 rounded text-[9px] font-mono glass border border-emerald-500/30 text-emerald-400 font-semibold">
+                        AdSense Ready
+                    </div>
+                </div>
+
+                <div class="pb-2 text-[9px] font-mono opacity-50" style="color:var(--text-d)">
+                    SourceFix Ads
+                </div>
+            </div>
+        </div>
+    </aside>
+
+</div>
+
+<footer class="relative z-10 w-full max-w-7xl mx-auto px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px]"
+        style="color:var(--text-d);border-top:1px solid var(--border)">
+    <div class="flex items-center gap-3">
+        <span class="font-mono">SourceFix &copy; 2026 &middot; Клиентское восстановление файлов</span>
+    </div>
+    <div class="flex items-center gap-4">
+        <button id="tipBtnFooter" class="hover:text-amber-400 transition flex items-center gap-1.5 font-mono text-[11px] cursor-pointer">
+            <span>☕ Поддержать проект</span>
+        </button>
+        <span class="opacity-30">&middot;</span>
+        <span class="font-mono">Работает полностью в вашем браузере</span>
+    </div>
+</footer>
+
+<!-- TIP / DONATION MODAL (Buy Me a Coffee & Monobank) -->
+<div id="tipModal" class="fixed inset-0 z-50 hidden opacity-0 transition-opacity duration-200 flex items-center justify-center p-4">
+    <!-- Backdrop -->
+    <div id="tipModalBackdrop" class="absolute inset-0 bg-black/75 backdrop-blur-md cursor-pointer"></div>
+
+    <!-- Modal Box -->
+    <div class="tip-modal-box relative z-10 w-full max-w-md glass-bright rounded-3xl border border-amber-500/30 p-6 sm:p-7 shadow-2xl transform scale-95 transition-transform duration-200"
+         style="box-shadow: 0 0 50px -10px rgba(245,158,11,.25)">
+        
+        <!-- Header -->
+        <div class="flex items-start justify-between mb-5">
+            <div class="flex items-center gap-3">
+                <div class="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 shadow-md">
+                    ☕
+                </div>
+                <div>
+                    <h3 class="text-xl font-black tracking-tight" style="color:var(--text)">Чаевые автору</h3>
+                    <p class="text-xs" style="color:var(--text-m)">Поддержите проект удобным способом</p>
+                </div>
+            </div>
+            <button id="tipModalClose" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer" title="Закрыть">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+
+        <div class="space-y-4">
+            <!-- 1. BUY ME A COFFEE -->
+            <div class="p-4 rounded-2xl border transition-all duration-200 relative overflow-hidden group"
+                 style="background:rgba(255,221,0,.04);border-color:rgba(255,221,0,.3)">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xl">☕</span>
+                        <div>
+                            <div class="text-sm font-black text-amber-400">Buy Me a Coffee</div>
+                            <div class="text-[11px] font-mono opacity-80" style="color:var(--text-m)">buymeacoffee.com/puzikov020g</div>
+                        </div>
+                    </div>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-300 font-bold">
+                        Онлайн
+                    </span>
+                </div>
+                <p class="text-[11px] leading-relaxed mb-3.5" style="color:var(--text-m)">
+                    Международный перевод любой картой мира (Visa, MasterCard, Apple Pay, Google Pay).
+                </p>
+                <a href="https://buymeacoffee.com/puzikov020g" target="_blank" rel="noopener noreferrer"
+                   class="tip-bmc-link w-full py-2.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition shadow-md hover:shadow-amber-500/20 hover:scale-[1.01] active:scale-[0.99] bg-[#FFDD00] hover:bg-[#ffe333] text-black cursor-pointer">
+                    <span>☕</span>
+                    <span>Угостить кофе на Buy Me a Coffee ↗</span>
+                </a>
+            </div>
+
+            <!-- 2. MONOBANK CARD -->
+            <div class="p-4 rounded-2xl border transition-all duration-200 relative overflow-hidden glass"
+                 style="border-color:var(--border)">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xl">💳</span>
+                        <div>
+                            <div class="text-sm font-black" style="color:var(--text)">Карта Monobank</div>
+                            <div class="text-[11px] font-mono" style="color:var(--text-m)">Прямой перевод на карту</div>
+                        </div>
+                    </div>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded-full border border-purple-500/30 bg-purple-500/10 text-purple-400 font-bold">
+                        Монобанк
+                    </span>
+                </div>
+
+                <div class="my-2.5 p-3 rounded-xl border flex items-center justify-center glass-bright shadow-inner" style="border-color:var(--border)">
+                    <span id="tipMonobankNumber" class="font-mono font-black text-lg sm:text-xl tracking-wider select-all" style="color:var(--text)">
+                        4441 1110 3714 3868
+                    </span>
+                </div>
+
+                <button id="tipCopyMonobankBtn" data-clipboard="4441111037143868"
+                        class="tip-copy-btn w-full py-2.5 px-4 rounded-xl font-mono font-bold text-xs flex items-center justify-center gap-2 transition cursor-pointer border border-amber-500/40 hover:border-amber-400 bg-amber-500/10 hover:bg-amber-500/20 text-amber-500 hover:text-amber-400">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                    <span class="tip-btn-text">Скопировать номер карты</span>
+                </button>
+            </div>
+        </div>
+
+        <div class="mt-5 text-center">
+            <p class="text-[11px] font-mono" style="color:var(--text-d)">Все средства идут на поддержку проекта и разработку новых алгоритмов ❤️</p>
+        </div>
+
+    </div>
+</div>
+
+<!-- Clean Single ES-Module Entrypoint -->
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
